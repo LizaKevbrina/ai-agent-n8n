@@ -1,0 +1,312 @@
+version: '3.8'
+
+services:
+  # Validation Service
+  validation-service:
+    build: ./services/validation
+    container_name: validation-service
+    ports:
+      - "8001:8001"
+    environment:
+      - LOG_LEVEL=INFO
+    networks:
+      - ai-network
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Intent Classifier Service
+  intent-service:
+    build: ./services/intent
+    container_name: intent-service
+    ports:
+      - "8004:8004"
+    environment:
+      - YANDEX_API_KEY_FILE=/run/secrets/yandex_api_key
+      - YANDEX_FOLDER_ID_FILE=/run/secrets/yandex_folder_id
+      - REDIS_URL=redis://redis:6379
+    secrets:
+      - yandex_api_key
+      - yandex_folder_id
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # RAG Service
+  rag-service:
+    build: ./services/rag
+    container_name: rag-service
+    ports:
+      - "8003:8003"
+    environment:
+      - YANDEX_API_KEY_FILE=/run/secrets/yandex_api_key
+      - YANDEX_FOLDER_ID_FILE=/run/secrets/yandex_folder_id
+      - SUPABASE_URL_FILE=/run/secrets/supabase_url
+      - SUPABASE_KEY_FILE=/run/secrets/supabase_key
+      - REDIS_URL=redis://redis:6379
+    secrets:
+      - yandex_api_key
+      - yandex_folder_id
+      - supabase_url
+      - supabase_key
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # LLM Service
+  llm-service:
+    build: ./services/llm
+    container_name: llm-service
+    ports:
+      - "8005:8005"
+    environment:
+      - YANDEX_API_KEY_FILE=/run/secrets/yandex_api_key
+      - YANDEX_FOLDER_ID_FILE=/run/secrets/yandex_folder_id
+    secrets:
+      - yandex_api_key
+      - yandex_folder_id
+    networks:
+      - ai-network
+    deploy:
+      replicas: 5
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Memory Service
+  memory-service:
+    build: ./services/memory
+    container_name: memory-service
+    ports:
+      - "8006:8006"
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - POSTGRES_URL=postgresql://ai_user:$(cat /run/secrets/postgres_password)@postgres:5432/ai_db
+    secrets:
+      - postgres_password
+    depends_on:
+      - postgres
+    networks:
+      - ai-network
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Logging Service
+  logging-service:
+    build: ./services/logging
+    container_name: logging-service
+    ports:
+      - "8007:8007"
+    environment:
+      - SUPABASE_URL_FILE=/run/secrets/supabase_url
+      - SUPABASE_KEY_FILE=/run/secrets/supabase_key
+      - LOG_LEVEL=INFO
+    secrets:
+      - supabase_url
+      - supabase_key
+    depends_on:
+      - postgres
+    networks:
+      - ai-network
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # Postgres
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=ai_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=ai_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+# Alertmanager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - ai-network
+    restart: unless-stopped
+  
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    networks:
+      - ai-network
+    restart: unless-stopped
+  
+  # Postgres Exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://ai_user:${POSTGRES_PASSWORD}@postgres:5432/ai_db?sslmode=disable
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+secrets:
+  yandex_api_key:
+    file: ./secrets/yandex_api_key.txt
+  yandex_folder_id:
+    file: ./secrets/yandex_folder_id.txt
+  supabase_url:
+    file: ./secrets/supabase_url.txt
+  supabase_key:
+    file: ./secrets/supabase_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+
+volumes:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+
+networks:
+  ai-network:
+    driver: bridge
