@@ -1,0 +1,198 @@
+groups:
+  - name: ai_agent_critical
+    interval: 30s
+    rules:
+      # LLM Service rate limit
+      - alert: LLMRateLimitHigh
+        expr: rate(llm_rate_limits_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: llm
+        annotations:
+          summary: "LLM Service hitting rate limits"
+          description: "Rate limit hits: {{ $value | humanize }} per second. Consider throttling or scaling."
+          runbook: "https://wiki.company.com/runbooks/llm-rate-limit"
+      
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status="error"}[5m])) 
+          / 
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}. Investigate immediately!"
+          dashboard: "https://grafana.company.com/d/ai-agent"
+      
+      # Memory Service version conflicts
+      - alert: MemoryVersionConflictsHigh
+        expr: rate(memory_version_conflicts_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: memory
+        annotations:
+          summary: "High rate of version conflicts"
+          description: "{{ $value | humanize }} conflicts per second. Check prompt deployment process."
+      
+      # RAG Service low similarity
+      - alert: RAGLowSimilarityHigh
+        expr: rate(rag_low_similarity_total[10m]) > 0.3
+        for: 15m
+        labels:
+          severity: warning
+          service: rag
+        annotations:
+          summary: "RAG frequently returning no results"
+          description: "{{ $value | humanizePercentage }} of searches have no results above threshold. Consider updating knowledge base or lowering threshold."
+      
+      # LLM Circuit breaker open
+      - alert: LLMCircuitBreakerOpen
+        expr: increase(llm_circuit_breaker_opens_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: llm
+          oncall: true
+        annotations:
+          summary: "LLM Circuit breaker opened!"
+          description: "YandexGPT API is failing. All requests are being rejected."
+          action: "Check YandexGPT status and API key validity"
+      
+      # Service down
+      - alert: ServiceDown
+        expr: up{job=~".*-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          oncall: true
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service has been down for 2 minutes"
+          action: "Check container logs: docker logs {{ $labels.job }}"
+      
+      # High latency
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P95 latency: {{ $labels.job }}"
+          description: "P95 latency is {{ $value | humanizeDuration }}. Target: <2s"
+      
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Cache is unavailable. All requests will be slower."
+      
+      # Postgres down
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "Postgres is down"
+          description: "Database is unavailable. Memory service will fail."
+      
+      # LLM Queue size high
+      - alert: LLMQueueSizeHigh
+        expr: llm_queue_size > 8
+        for: 5m
+        labels:
+          severity: warning
+          service: llm
+        annotations:
+          summary: "LLM Service queue is full"
+          description: "Queue size: {{ $value }}. Consider scaling replicas."
+      
+      # No context generation high
+      - alert: NoContextGenerationHigh
+        expr: rate(llm_no_context_generations_total[10m]) > 0.5
+        for: 15m
+        labels:
+          severity: info
+          service: llm
+        annotations:
+          summary: "Many generations without RAG context"
+          description: "{{ $value | humanizePercentage }} of generations have no context. Knowledge base may be incomplete."
+
+  - name: ai_agent_performance
+    interval: 1m
+    rules:
+      # Token usage spike
+      - alert: TokenUsageSpike
+        expr: rate(llm_tokens_used_sum[5m]) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          cost: true
+        annotations:
+          summary: "High token usage detected"
+          description: "Token consumption: {{ $value | humanize }}/s. Monitor costs."
+      
+      # Cache hit rate low
+      - alert: CacheHitRateLow
+        expr: |
+          sum(rate(rag_cache_hits_total[10m])) 
+          / 
+          (sum(rate(rag_cache_hits_total[10m])) + sum(rate(rag_cache_misses_total[10m]))) < 0.3
+        for: 30m
+        labels:
+          severity: info
+          service: rag
+        annotations:
+          summary: "RAG cache hit rate is low"
+          description: "Hit rate: {{ $value | humanizePercentage }}. Consider longer TTL or more memory."
+      
+      # Memory window full
+      - alert: MemoryWindowFull
+        expr: avg(memory_window_size) > 35
+        for: 30m
+        labels:
+          severity: info
+          service: memory
+        annotations:
+          summary: "Chat histories approaching window limit"
+          description: "Average window size: {{ $value }}. Users may lose context soon."
+
+  - name: ai_agent_business
+    interval: 5m
+    rules:
+      # Low conversation rate
+      - alert: LowConversationRate
+        expr: rate(telegram_messages_total[1h]) < 10
+        for: 2h
+        labels:
+          severity: info
+          business: true
+        annotations:
+          summary: "Low user activity"
+          description: "Only {{ $value | humanize }} messages/hour. Check marketing campaigns."
+      
+      # High abandonment rate
+      - alert: HighAbandonmentRate
+        expr: |
+          sum(rate(telegram_messages_total{step="initial"}[1h])) 
+          / 
+          sum(rate(telegram_messages_total{step="closing"}[1h])) > 5
+        for: 3h
+        labels:
+          severity: warning
+          business: true
+        annotations:
+          summary: "High user abandonment"
+          description: "Many users drop before closing. Review conversation flow."
