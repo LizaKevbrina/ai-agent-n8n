@@ -1,0 +1,146 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        32
+      ],
+      "id": "7a8466d5-e127-4ed0-a767-22823324d7ec"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "error_type",
+              "value": "={{ $json.error?.message || 'Unknown error' }}",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "error_node",
+              "value": "={{ $json.node?.name || 'Unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "session_id",
+              "value": "={{ $json?.session_id || $json?.request?.session_id || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "4",
+              "name": "correlation_id",
+              "value": "={{ $json?.correlation_id || $json?.request?.correlation_id || 'N/A' }}",
+              "type": "string"
+            },
+            {
+              "id": "5",
+              "name": "user_message",
+              "value": "={{ (() => {\n  const error = $json.error?.message || '';\n  const statusCode = $json.error?.httpCode || 0;\n  \n  if (statusCode === 429 || error.includes('rate limit')) {\n    return '⏳ Система перегружена. Пожалуйста, попробуйте через 30 секунд.';\n  }\n  \n  if (statusCode === 503 || error.includes('unavailable') || error.includes('Circuit')) {\n    return '🔧 Сервис временно недоступен. Попробуйте через 1-2 минуты.';\n  }\n  \n  if (error.includes('timeout')) {\n    return '⏱️ Запрос обрабатывается слишком долго. Попробуйте упростить вопрос.';\n  }\n  \n  if (statusCode === 409) {\n    return '🔄 Конфликт версий. Пожалуйста, повторите запрос.';\n  }\n  \n  return 'Извините, произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте позже или свяжитесь с менеджером Лия: +7-999-000-12-12';\n})() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Classify Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        32
+      ],
+      "id": "ddd4b2e4-6019-4ab1-b574-021423229dcc"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.session_id }}",
+        "text": "={{ $json.user_message }}\\n\\n🔍 Код ошибки: {{ $json.correlation_id }}\\n📍 Узел: {{ $json.error_node }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "name": "Send Error Message1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        32
+      ],
+      "id": "9b7bf410-368a-4f1c-a80e-3983c3be13d3",
+      "webhookId": "bf585417-4557-4293-bee4-e2f8d3f8cf70",
+      "credentials": {
+        "telegramApi": {
+          "id": "K1cNfxlN2ucieAGo",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://logging-service:8007/api/v1/errors",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\nerror_message: $json.user_message,\nerror_code: $json.error?.httpCode || 0,\nnode_name: $json.error_node || 'unknown',\nsession_id: $json.session_id || 'unknown',\ncorrelation_id: $json.correlation_id || 'N/A',\nraw_error: $json.error ? \nJSON.stringify($json.error) : null,\ntimestamp: new Date().toISOString()\n} }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        32
+      ],
+      "id": "47dc92ba-1610-4b93-8ea0-0d2f9fdc6494",
+      "name": "Log Error to Logging Service"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Classify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Message1": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Logging Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3386092e097f883a29dfea9711fe5d0b1e6ddcdf17d970ae2eae145413f02a1b"
+  }
+}
