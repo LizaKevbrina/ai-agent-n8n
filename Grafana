@@ -1,0 +1,72 @@
+{
+  "dashboard": {
+    "title": "AI Agent Overview",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (service)"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{status=\"error\"}[5m])) / sum(rate(http_requests_total[5m]))"
+          }
+        ]
+      },
+      {
+        "title": "P95 Latency",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) by (service)"
+          }
+        ]
+      },
+      {
+        "title": "LLM Queue Size",
+        "targets": [
+          {
+            "expr": "llm_queue_size"
+          }
+        ]
+      },
+      {
+        "title": "Token Usage",
+        "targets": [
+          {
+            "expr": "rate(llm_tokens_used_sum[5m])"
+          }
+        ]
+      },
+      {
+        "title": "Cache Hit Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(rag_cache_hits_total[5m])) / (sum(rate(rag_cache_hits_total[5m])) + sum(rate(rag_cache_misses_total[5m])))"
+          }
+        ]
+      },
+      {
+        "title": "Memory Version Conflicts",
+        "targets": [
+          {
+            "expr": "rate(memory_version_conflicts_total[5m])"
+          }
+        ]
+      },
+      {
+        "title": "Active Alerts",
+        "targets": [
+          {
+            "expr": "ALERTS{alertstate=\"firing\"}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
