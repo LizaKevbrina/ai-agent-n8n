@@ -1,0 +1,117 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ai-agent-cluster'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # Validation Service
+  - job_name: 'validation-service'
+    static_configs:
+      - targets: ['validation-service:8001']
+        labels:
+          service: 'validation'
+          tier: 'security'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Intent Classifier Service
+  - job_name: 'intent-service'
+    static_configs:
+      - targets: ['intent-service:8004']
+        labels:
+          service: 'intent'
+          tier: 'classification'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # RAG Service
+  - job_name: 'rag-service'
+    static_configs:
+      - targets: ['rag-service:8003']
+        labels:
+          service: 'rag'
+          tier: 'retrieval'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # LLM Service
+  - job_name: 'llm-service'
+    static_configs:
+      - targets: ['llm-service:8005']
+        labels:
+          service: 'llm'
+          tier: 'generation'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Memory Service
+  - job_name: 'memory-service'
+    static_configs:
+      - targets: ['memory-service:8006']
+        labels:
+          service: 'memory'
+          tier: 'storage'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Logging Service
+  - job_name: 'logging-service'
+    static_configs:
+      - targets: ['logging-service:8007']
+        labels:
+          service: 'logging'
+          tier: 'observability'
+    metrics_path: '/metrics'
+    scrape_interval: 20s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          tier: 'infrastructure'
+    scrape_interval: 30s
+
+  # Postgres
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+          tier: 'infrastructure'
+    scrape_interval: 30s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          tier: 'monitoring'
+  
+  # Add exporters for infrastructure
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+  
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
